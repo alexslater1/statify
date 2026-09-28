@@ -1,0 +1,8 @@
+# Personal Spotify streaming data
+data/
+
+# Generated stats output
+output/
+
+# Python
+__pycache__/
