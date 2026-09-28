@@ -32,13 +32,16 @@ Each period gets its own folder, so runs don't overwrite each other: `output/all
 
 | File | Contents |
 |---|---|
-| `top_artists.txt` | Top 100 artists by minutes played |
+| `summary.txt` | Hours listened, plays, how many artists and songs, and how many days you listened |
+| `top_artists.txt` | Top 100 artists by minutes played, with their plays |
 | `top_songs.txt` | Top 100 songs by plays (a play is 30 seconds or more) |
-| `total_minutes.txt` | Total minutes played |
-| `total_minutes_per_month.txt` | Minutes played each month |
+| `total_minutes_per_month.txt` | Minutes and plays each month, and that month's top artist |
 | `top5_artists_per_week.txt`, `top5_artists_per_month.txt` | Top 5 artists for every week and month |
 | `top5_songs_per_week.txt`, `top5_songs_per_month.txt` | Top 5 songs for every week and month |
 | `top20_song_day_streaks.txt`, `top20_artist_day_streaks.txt` | Longest runs of consecutive days you played a song or artist |
 | `day_of_week_most.txt`, `hour_of_day_most.txt` | Minutes played by day of the week and hour of the day |
+| `biggest_days.txt` | The days you listened most, with that day's top artist and song |
+| `most_plays_in_one_day.txt` | The most times you played one song in a single day |
+| `new_artists_per_month.txt` | How many artists you played for the first time each month, and the biggest finds. "First time" means first in your data, so the first few months run high |
 
 `data/` and `output/` are git-ignored, so your listening history stays on your machine.

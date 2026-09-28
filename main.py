@@ -123,6 +123,14 @@ def minutes(ms):
     return round(ms / 60_000, 1)
 
 
+def month_range(first, last):
+    months, y, m = [], first.year, first.month
+    while (y, m) <= (last.year, last.month):
+        months.append(f"{y}-{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return months
+
+
 def iso_week(day):
     """Monday-to-Sunday weeks, numbered so a week never splits at New Year."""
     year, week, _ = day.isocalendar()
@@ -142,12 +150,21 @@ def longest_streak(days):
     return best
 
 
-def analyse(streams):
-    """Aggregate the streams into the numbers behind every table."""
-    artist_ms, song_plays, month_ms = collections.Counter(), collections.Counter(), collections.Counter()
+def top_key(counter):
+    return counter.most_common(1)[0][0] if counter else None
+
+
+def analyse(streams, history, start, end):
+    """Aggregate one period's streams into the numbers behind every table.
+
+    `history` is every stream regardless of period; it decides whether an artist was new.
+    """
+    artist_ms, artist_plays = collections.Counter(), collections.Counter()
+    song_plays = collections.Counter()
+    month_ms, month_plays, day_ms = collections.Counter(), collections.Counter(), collections.Counter()
     weekday_hour_ms = [[0] * 24 for _ in WEEKDAYS]
-    week_artist, month_artist = (collections.defaultdict(collections.Counter) for _ in range(2))
-    week_song, month_song = (collections.defaultdict(collections.Counter) for _ in range(2))
+    week_artist, month_artist, day_artist = (collections.defaultdict(collections.Counter) for _ in range(3))
+    week_song, month_song, day_song = (collections.defaultdict(collections.Counter) for _ in range(3))
     song_days, artist_days = collections.defaultdict(set), collections.defaultdict(set)
 
     for s in streams:
@@ -155,31 +172,61 @@ def analyse(streams):
         week, month = iso_week(day), f"{day:%Y-%m}"
         artist_ms[s.artist] += s.ms
         month_ms[month] += s.ms
+        day_ms[day] += s.ms
         weekday_hour_ms[day.weekday()][s.end.hour] += s.ms
         week_artist[week][s.artist] += s.ms
         month_artist[month][s.artist] += s.ms
+        day_artist[day][s.artist] += s.ms
         if not s.is_play:
             continue
+        artist_plays[s.artist] += 1
         song_plays[s.song] += 1
+        month_plays[month] += 1
         week_song[week][s.song] += 1
         month_song[month][s.song] += 1
+        day_song[day][s.song] += 1
         song_days[s.song].add(day)
         artist_days[s.artist].add(day)
 
+    # An artist is "new" in the month of their first play anywhere in the history. The month the
+    # history starts is left out, since everything is new then.
+    first_heard = {}
+    for s in history:
+        if s.is_play:
+            first_heard.setdefault(s.artist, s.end.date())
+    history_start = f"{history[0].end:%Y-%m}"
+    discovered = collections.defaultdict(list)
+    for artist, day in first_heard.items():
+        if start <= day <= end:
+            discovered[f"{day:%Y-%m}"].append(artist)
+
     song_streaks = sorted(((song, longest_streak(days)) for song, days in song_days.items()),
-                          key=lambda x: -x[1][0])
+                          key=lambda x: (-x[1][0], -song_plays[x[0]]))
     artist_streaks = sorted(((artist, longest_streak(days)) for artist, days in artist_days.items()),
-                            key=lambda x: -x[1][0])
+                            key=lambda x: (-x[1][0], -artist_ms[x[0]]))
+    repeats = sorted(((n, day, song) for day, c in day_song.items() for song, n in c.items()),
+                     key=lambda x: (-x[0], x[1]))
+    months = month_range(start, end)
 
     def songs(counter, n):
         return [[t, a, plays] for (t, a), plays in counter.most_common(n)]
 
     return {
-        "minutes": minutes(sum(artist_ms.values())),
-        "top_artists": [[a, minutes(ms)] for a, ms in artist_ms.most_common(REPORT_SIZE)],
+        "period": {"start": start.isoformat(), "end": end.isoformat()},
+        "totals": {
+            "minutes": minutes(sum(artist_ms.values())),
+            "plays": sum(song_plays.values()),
+            "artists": len(artist_plays),
+            "songs": len(song_plays),
+            "active_days": len(day_ms),
+            "days": (end - start).days + 1,
+        },
+        "top_artists": [[a, minutes(ms), artist_plays[a]] for a, ms in artist_ms.most_common(REPORT_SIZE)],
         "top_songs": songs(song_plays, REPORT_SIZE),
-        "months": [[m, minutes(ms)] for m, ms in sorted(month_ms.items())],
+        "months": [[m, minutes(month_ms[m]), month_plays[m], top_key(month_artist[m])] for m in months],
         "weekday_hour": [[ms / 60_000 for ms in row] for row in weekday_hour_ms],  # unrounded, as it gets summed
+        "discovery": [[m, len(discovered[m]), sorted(discovered[m], key=lambda a: -artist_ms[a])[:3]]
+                      for m in months if m != history_start],
         "weekly_top_artists": {w: [[a, minutes(ms)] for a, ms in c.most_common(5)] for w, c in sorted(week_artist.items())},
         "monthly_top_artists": {m: [[a, minutes(ms)] for a, ms in c.most_common(5)] for m, c in sorted(month_artist.items())},
         "weekly_top_songs": {w: songs(c, 5) for w, c in sorted(week_song.items())},
@@ -188,6 +235,9 @@ def analyse(streams):
                          for (t, a), (n, first, last) in song_streaks[:20]],
         "artist_streaks": [[a, n, first.isoformat(), last.isoformat()]
                            for a, (n, first, last) in artist_streaks[:20]],
+        "biggest_days": [[d.isoformat(), minutes(ms), top_key(day_artist[d]), list(top_key(day_song[d]) or ("", ""))]
+                         for d, ms in day_ms.most_common(20)],
+        "repeats": [[d.isoformat(), t, a, n] for n, d, (t, a) in repeats[:20]],
     }
 
 
@@ -221,14 +271,27 @@ def write_table(path, headers, rows, group_col=None):
 
 
 def write_text_reports(stats, out):
+    t = stats["totals"]
     song = lambda track, artist: [short(track, MAX_TITLE_LENGTH), short(artist, MAX_ARTIST_LENGTH)]
 
-    (out / "total_minutes.txt").write_text(f"Total minutes played: {stats['minutes']:,.1f}\n", encoding="utf-8")
-    write_table(out / "top_artists.txt", ["Rank", "Artist", "Minutes"],
-                [[i, short(a, MAX_TITLE_LENGTH), m] for i, (a, m) in enumerate(stats["top_artists"], 1)])
+    summary = [
+        ("Period", f"{stats['period']['start']} to {stats['period']['end']}"),
+        ("Minutes played", f"{t['minutes']:,.0f}  ({t['minutes'] / 60:,.0f} hours)"),
+        ("Plays (30s+)", f"{t['plays']:,}"),
+        ("Artists", f"{t['artists']:,}"),
+        ("Songs", f"{t['songs']:,}"),
+        ("Days listened", f"{t['active_days']:,} of {t['days']:,}"),
+        ("Average per listening day", f"{t['minutes'] / t['active_days']:,.0f} minutes"),
+    ]
+    width = max(len(k) for k, _ in summary)
+    (out / "summary.txt").write_text("".join(f"{k + ':':<{width + 1}} {v}\n" for k, v in summary), encoding="utf-8")
+
+    write_table(out / "top_artists.txt", ["Rank", "Artist", "Minutes", "Plays"],
+                [[i, short(a, MAX_TITLE_LENGTH), m, p] for i, (a, m, p) in enumerate(stats["top_artists"], 1)])
     write_table(out / "top_songs.txt", ["Rank", "Song", "Artist", "Plays"],
                 [[i, *song(tr, a), n] for i, (tr, a, n) in enumerate(stats["top_songs"], 1)])
-    write_table(out / "total_minutes_per_month.txt", ["Month", "Minutes"], stats["months"])
+    write_table(out / "total_minutes_per_month.txt", ["Month", "Minutes", "Plays", "Top artist"],
+                [[m, mins, plays, top or ""] for m, mins, plays, top in stats["months"]])
 
     for period in ("week", "month"):
         write_table(out / f"top5_artists_per_{period}.txt", [period.title(), "Rank", "Artist", "Minutes"],
@@ -250,6 +313,14 @@ def write_text_reports(stats, out):
                 [[day, round(sum(row), 1)] for day, row in zip(WEEKDAYS, heat)])
     write_table(out / "hour_of_day_most.txt", ["Hour", "Minutes"],
                 [[f"{h:02d}:00", round(sum(row[h] for row in heat), 1)] for h in range(24)])
+
+    write_table(out / "biggest_days.txt", ["Rank", "Date", "Minutes", "Top artist", "Top song"],
+                [[i, d, m, short(a, MAX_ARTIST_LENGTH), short(tr, MAX_TITLE_LENGTH)]
+                 for i, (d, m, a, (tr, _)) in enumerate(stats["biggest_days"], 1)])
+    write_table(out / "most_plays_in_one_day.txt", ["Rank", "Date", "Song", "Artist", "Plays"],
+                [[i, d, *song(tr, a), n] for i, (d, tr, a, n) in enumerate(stats["repeats"], 1)])
+    write_table(out / "new_artists_per_month.txt", ["Month", "New artists", "Biggest finds"],
+                [[m, n, ", ".join(finds)] for m, n, finds in stats["discovery"]])
 
 
 # --- CLI -------------------------------------------------------------------------------------
@@ -303,9 +374,13 @@ def main():
     out = args.out or BASE / "output" / folder
     out.mkdir(parents=True, exist_ok=True)
 
-    write_text_reports(analyse(streams), out)
-    print(f"{label}: {start} to {end}, {len(streams):,} streams")
-    print(f"  Wrote {len(list(out.glob('*.txt')))} tables to {out}")
+    stats = analyse(streams, history, start, end)
+    write_text_reports(stats, out)
+
+    t = stats["totals"]
+    print(f"{label}: {start} to {end}")
+    print(f"  {t['minutes'] / 60:,.0f} hours, {t['plays']:,} plays, {t['artists']:,} artists, {t['songs']:,} songs")
+    print(f"  Wrote {len(list(out.glob('*.txt')))} text tables to {out}")
 
 
 if __name__ == "__main__":
