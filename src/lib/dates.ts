@@ -36,6 +36,29 @@ export function addDays(day: string, n: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** How many days `to` is after `from`: 1 for the next day. */
+export function daysBetween(from: string, to: string): number {
+  return (
+    (Date.parse(`${to}T00:00Z`) - Date.parse(`${from}T00:00Z`)) / 86_400_000
+  );
+}
+
+/** 0 for Monday to 6 for Sunday. */
+export function weekday(day: string): number {
+  return (new Date(`${day}T00:00Z`).getUTCDay() + 6) % 7;
+}
+
+/**
+ * The ISO week, like "2025-W01". Weeks run Monday to Sunday and belong to the
+ * year their Thursday is in, so a week never splits at New Year.
+ */
+export function isoWeek(day: string): string {
+  const thursday = addDays(day, 3 - weekday(day));
+  const year = thursday.slice(0, 4);
+  const week = Math.floor(daysBetween(`${year}-01-01`, thursday) / 7) + 1;
+  return `${year}-W${pad(week)}`;
+}
+
 function dayOf(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }

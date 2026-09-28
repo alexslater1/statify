@@ -25,6 +25,13 @@ export interface Stream {
   ms: number; // how long it played
 }
 
+/** Spotify counts a stream as a play once it passes 30 seconds. */
+export const PLAY_MS = 30_000;
+
+export function isPlay(stream: Stream): boolean {
+  return stream.ms >= PLAY_MS;
+}
+
 export interface History {
   streams: Stream[]; // oldest first
   artists: Artist[]; // indexed by ID

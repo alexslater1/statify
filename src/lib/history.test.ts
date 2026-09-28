@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stream } from "../test/fixtures.ts";
-import { buildHistory } from "./history.ts";
+import { buildHistory, isPlay } from "./history.ts";
 
 describe("buildHistory", () => {
   it("drops streams with an unknown artist", () => {
@@ -120,5 +120,19 @@ describe("buildHistory", () => {
       { from: "2025-07-11 00:30", to: "2025-07-14 00:30" },
     ]);
     expect(history.missingDays).toEqual(["2025-07-12", "2025-07-13"]);
+  });
+});
+
+describe("isPlay", () => {
+  it("counts a stream as a play from 30 seconds", () => {
+    const [short, play] = buildHistory(
+      [
+        stream("2025-01-01 10:00", "A", "B", 29_999),
+        stream("2025-01-01 10:01", "A", "B", 30_000),
+      ],
+      [],
+    ).streams;
+    expect(isPlay(short)).toBe(false);
+    expect(isPlay(play)).toBe(true);
   });
 });
