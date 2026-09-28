@@ -8,7 +8,7 @@ Statify reads the streaming history in your Spotify data export and writes text 
 
 1. On Spotify's [Privacy settings](https://www.spotify.com/account/privacy/) page, request your **Account data**.
 2. Spotify emails you a download link when it's ready, usually within a few days.
-3. Unzip it into its own folder inside `data/`, next to `main.py`. Any name works, but the month you downloaded it keeps things tidy:
+3. Unzip it into its own folder inside the project's `data/` folder. Any name works, but the month you downloaded it keeps things tidy:
 
 ```
 data/
@@ -21,11 +21,11 @@ Each export only covers about the last year, so keep the old ones: every folder 
 ## Run it
 
 ```
-python3 main.py                                        # everything
-python3 main.py --year 2025                            # one calendar year
-python3 main.py --since 2025-06-01 --until 2025-08-31  # any date range
-python3 main.py --year 2025 --since 2025-06-01         # options combine: June to December 2025
-python3 main.py --data data/2026-09                    # just one export
+python3 python/main.py                                        # everything
+python3 python/main.py --year 2025                            # one calendar year
+python3 python/main.py --since 2025-06-01 --until 2025-08-31  # any date range
+python3 python/main.py --year 2025 --since 2025-06-01         # options combine: June to December 2025
+python3 python/main.py --data data/2026-09                    # just one export
 ```
 
 It needs Python 3 and nothing else. The script reads every `StreamingHistory_music_*.json` file in `data/` and its subfolders, and skips tracks with an unknown artist.
@@ -63,3 +63,28 @@ Each period gets its own folder, so runs don't overwrite each other: `output/all
 | `new_artists_per_month.txt` | How many artists you played for the first time each month, and the biggest finds. "First time" means first in your data, so the first few months run high |
 
 `data/` and `output/` are git-ignored, so your listening history stays on your machine.
+
+## The web app
+
+Statify is being rebuilt as a web app that runs entirely in your browser. So far it's only a placeholder page, so use the Python script above for your stats.
+
+It needs [Node.js](https://nodejs.org/) 24. The easiest way to get it is with [nvm](https://github.com/nvm-sh/nvm):
+
+1. Install nvm using the script in [its install instructions](https://github.com/nvm-sh/nvm#install--update-script).
+2. Open a new terminal, so it loads nvm. A terminal that was already open says `npm` isn't found.
+3. Run `nvm install` in this folder. It installs the Node version in `.nvmrc`.
+
+Then:
+
+```
+npm install    # once
+npm run dev    # then open http://localhost:5173
+```
+
+| Command | What it does |
+|---|---|
+| `npm test` | Runs the tests with Vitest |
+| `npm run lint` | Runs ESLint and checks formatting with Prettier |
+| `npm run format` | Formats the code with Prettier |
+| `npm run typecheck` | Checks the TypeScript types |
+| `npm run build` | Checks types and builds the site into `dist/` |

@@ -1,6 +1,6 @@
 # Statify
 
-Stats from a Spotify data export. Currently a Python script (`python3 main.py` reads `data/`, writes `output/`), being rebuilt as a React + TypeScript app one planned commit at a time.
+Stats from a Spotify data export. Currently a Python script (`python3 python/main.py` reads `data/`, writes `output/`), being rebuilt as a React + TypeScript app one planned commit at a time.
 
 ## Rules
 

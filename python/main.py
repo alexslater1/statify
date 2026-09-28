@@ -5,11 +5,11 @@ Put each Spotify export in its own folder under data/, named anything (e.g. data
 folder holding StreamingHistory_music_*.json files counts as one export, and they're all merged into
 one history, so keep old ones: each only covers about a year. Writes text tables to output/<period>/.
 
-    python3 main.py                                        # everything
-    python3 main.py --year 2025                            # one calendar year
-    python3 main.py --since 2025-06-01 --until 2025-08-31  # any date range
-    python3 main.py --year 2025 --since 2025-06-01         # options combine: June to December 2025
-    python3 main.py --data data/2026-09                    # just one export
+    python3 python/main.py                                        # everything
+    python3 python/main.py --year 2025                            # one calendar year
+    python3 python/main.py --since 2025-06-01 --until 2025-08-31  # any date range
+    python3 python/main.py --year 2025 --since 2025-06-01         # options combine: June to December 2025
+    python3 python/main.py --data data/2026-09                    # just one export
 
 Times are converted from UTC to this computer's timezone (or --tz) before anything is counted.
 """
@@ -24,7 +24,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(__file__).resolve().parent.parent  # the repo root, which holds data/ and output/
 
 FILE_RE = re.compile(r"StreamingHistory_music_(\d+)\.json")
 PLAY_MS = 30_000  # Spotify counts a stream as a play once it passes 30 seconds
