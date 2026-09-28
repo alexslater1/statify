@@ -24,6 +24,8 @@ It needs Python 3 and nothing else. The script reads every `StreamingHistory_mus
 
 Spotify records times in UTC, so they're converted to your computer's timezone before anything is counted, including summer time. Use `--tz Europe/London` (or any other timezone) to pick a different one. Weeks run Monday to Sunday, using ISO week numbers.
 
+Spotify sometimes lists the same song under different names, so songs and artists are matched ignoring case, accents, punctuation and quote styles. Tags that only relabel the same recording are dropped: "Let Down - Remastered", "Get Lucky (Radio Edit)" and "Icarus (with Tony Walsh)" count as "Let Down", "Get Lucky" and "Icarus". Live versions, remixes, demos and acoustic versions are different recordings, so they stay separate. Songs by different artists never merge, even with the same title. Each song is shown under its most recent spelling.
+
 ## What you get
 
 Each period gets its own folder, so runs don't overwrite each other: `output/all-time/` with no options, `output/2025/` for `--year 2025`, and the actual dates, like `output/2025-06-01_to_2025-12-31/`, once `--since` or `--until` is involved. Use `--out` to pick a different folder.

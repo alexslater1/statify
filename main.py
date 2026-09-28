@@ -14,7 +14,9 @@ Times are converted from UTC to this computer's timezone (or --tz) before anythi
 import argparse
 import collections
 import json
+import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -27,6 +29,18 @@ REPORT_SIZE = 100  # rows in the top-N tables
 MAX_TITLE_LENGTH = 35
 MAX_ARTIST_LENGTH = 25
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+# A tag at the end of a title: "Song - 2011 Remaster", "Song (Radio Edit)", "Song [Mono]"
+TAG_RE = re.compile(r"\s*(?:\s-\s([^()\[\]\-]*)|\(([^()]*)\)|\[([^\[\]]*)\])\s*$")
+# Tags that only relabel the same recording, so they're dropped...
+SAME_RECORDING_RE = re.compile(
+    r"^(?:feat\.?|ft\.|featuring|with)\s"
+    r"|\b(?:remaster(?:ed)?|radio edit|single version|album version|full length version|single edit|edit|mono|stereo|bonus track)\b",
+    re.IGNORECASE)
+# ...unless they also name a different recording: "Live - 2011 Remaster", "Radio Edit Remix"
+OTHER_RECORDING_RE = re.compile(r"\b(?:live|re-?mix|mix|demo|acoustic|unplugged|instrumental|session)\b", re.IGNORECASE)
+# Featured artists can sit anywhere: "Song (feat. X) [Interlude]"
+FEAT_RE = re.compile(r"\s*[(\[](?:feat\.?|ft\.|featuring)\s[^()\[\]]*[)\]]", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -53,16 +67,54 @@ def to_local(end_time, tz):
     return utc.astimezone(tz).replace(tzinfo=None)
 
 
-def load_streams(folder, tz):
-    """Every stream in the export's files, minus unknown artists, in local time."""
-    streams = []
+def load_records(folder):
+    """Raw stream records from every history file in the export."""
+    records = []
     # An export has as many files as it needs (10,000 streams each), so read them all
     for path in sorted(folder.glob("StreamingHistory_music_*.json")):
-        for r in json.loads(path.read_text(encoding="utf-8")):
-            if r["artistName"] == "Unknown Artist":
-                continue
-            streams.append(Stream(to_local(r["endTime"], tz), r["artistName"], r["trackName"], r["msPlayed"]))
-    return streams
+        records.extend(json.loads(path.read_text(encoding="utf-8")))
+    return records
+
+
+def song_title(track):
+    """The title without tags that only relabel the same recording.
+
+    "Get Lucky (Radio Edit) [feat. Pharrell Williams]" -> "Get Lucky", but live versions, remixes,
+    demos and acoustic versions are different recordings and keep their tags.
+    """
+    title = FEAT_RE.sub("", track)
+    while match := TAG_RE.search(title):
+        tag = next(g for g in match.groups() if g is not None)
+        if not SAME_RECORDING_RE.search(tag) or OTHER_RECORDING_RE.search(tag):
+            break
+        title = title[:match.start()]
+    return title.strip() or track
+
+
+def match_key(name):
+    """A loose form of a name for matching: ignores case, accents, punctuation and spaces, so
+    "I've" and "I’ve", "Born Slippy (Nuxx)" and "Born Slippy - Nuxx", or "Gold Rush" and "Goldrush" match."""
+    plain = "".join(c for c in unicodedata.normalize("NFKD", name.casefold()) if not unicodedata.combining(c))
+    return "".join(re.sub(r"[^\w\s]", "", plain).split()) or name.casefold()
+
+
+def build_streams(records, tz):
+    """Drop unknown artists, localise timestamps and unify names.
+
+    Spotify lists some songs and artists under more than one name ("Boys In the Better Land" /
+    "Boys in the Better Land", "Let Down" / "Let Down - Remastered", "I've" / "I’ve"), so they're
+    matched loosely (see song_title and match_key) and shown under their most recent spelling.
+    Songs by different artists never match, even with the same title.
+    """
+    records = sorted((r for r in records if r["artistName"] != "Unknown Artist"), key=lambda r: r["endTime"])
+    artist_names, track_names, rows = {}, {}, []
+    for r in records:  # oldest first, so the newest spelling wins
+        track = song_title(r["trackName"])
+        key = (match_key(track), match_key(r["artistName"]))
+        artist_names[key[1]] = r["artistName"]
+        track_names[key] = track
+        rows.append((r["endTime"], key, r["msPlayed"]))
+    return [Stream(to_local(end, tz), artist_names[key[1]], track_names[key], ms) for end, key, ms in rows]
 
 
 # --- Analysis --------------------------------------------------------------------------------
@@ -225,7 +277,7 @@ def main():
     args = parse_args()
     if not any(args.data.glob("StreamingHistory_music_*.json")):
         sys.exit(f"No StreamingHistory_music_*.json files in {args.data}")
-    history = load_streams(args.data, args.tz)
+    history = build_streams(load_records(args.data), args.tz)
     if not history:
         sys.exit(f"No listening in {args.data}")
     first, last = min(s.end.date() for s in history), max(s.end.date() for s in history)
