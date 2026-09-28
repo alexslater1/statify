@@ -13,14 +13,18 @@ Statify reads the streaming history in your Spotify data export and writes text 
 ## Run it
 
 ```
-python3 main.py
+python3 main.py                                        # everything
+python3 main.py --year 2025                            # one calendar year
+python3 main.py --since 2025-06-01 --until 2025-08-31  # any date range
+python3 main.py --year 2025 --since 2025-06-01         # options combine: June to December 2025
+python3 main.py --data data/2026-09                    # an export in another folder
 ```
 
-It needs Python 3 and nothing else. The script reads every `StreamingHistory_music_*.json` file in `data/`, counts listening from 1 January 2025 onwards, and skips tracks with an unknown artist.
+It needs Python 3 and nothing else. The script reads every `StreamingHistory_music_*.json` file in the data folder and skips tracks with an unknown artist.
 
 ## What you get
 
-Everything is written to `output/`:
+Each period gets its own folder, so runs don't overwrite each other: `output/all-time/` with no options, `output/2025/` for `--year 2025`, and the actual dates, like `output/2025-06-01_to_2025-12-31/`, once `--since` or `--until` is involved. Use `--out` to pick a different folder.
 
 | File | Contents |
 |---|---|

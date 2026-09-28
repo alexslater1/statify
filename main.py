@@ -1,21 +1,29 @@
 #!/usr/bin/env python3
 """Listening stats from Spotify's "Account data" export.
 
-Reads data/StreamingHistory_music_*.json and writes text tables to output/.
+Reads the StreamingHistory_music_*.json files in data/ and writes text tables to output/<period>/.
+
+    python3 main.py                                        # everything
+    python3 main.py --year 2025                            # one calendar year
+    python3 main.py --since 2025-06-01 --until 2025-08-31  # any date range
+    python3 main.py --year 2025 --since 2025-06-01         # options combine: June to December 2025
+    python3 main.py --data data/2026-09                    # another export folder
 """
+import argparse
 import collections
 import json
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+
+BASE = Path(__file__).resolve().parent
 
 PLAY_MS = 30_000  # Spotify counts a stream as a play once it passes 30 seconds
 REPORT_SIZE = 100  # rows in the top-N tables
 MAX_TITLE_LENGTH = 35
 MAX_ARTIST_LENGTH = 25
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-SINCE = "2025-01-01"  # only count listening after this date
 
 
 @dataclass(frozen=True)
@@ -37,12 +45,12 @@ class Stream:
 # --- Loading ---------------------------------------------------------------------------------
 
 def load_streams(folder):
-    """Every stream in the export's files, minus unknown artists and anything before SINCE."""
+    """Every stream in the export's files, minus unknown artists."""
     streams = []
     # An export has as many files as it needs (10,000 streams each), so read them all
     for path in sorted(folder.glob("StreamingHistory_music_*.json")):
         for r in json.loads(path.read_text(encoding="utf-8")):
-            if r["artistName"] == "Unknown Artist" or r["endTime"] <= SINCE:
+            if r["artistName"] == "Unknown Artist":
                 continue
             end = datetime.strptime(r["endTime"], "%Y-%m-%d %H:%M")
             streams.append(Stream(end, r["artistName"], r["trackName"], r["msPlayed"]))
@@ -178,16 +186,52 @@ def write_text_reports(stats, out):
                 [[f"{h:02d}:00", round(sum(row[h] for row in heat), 1)] for h in range(24)])
 
 
+# --- CLI -------------------------------------------------------------------------------------
+
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--data", type=Path, default=BASE / "data",
+                   help="folder holding the StreamingHistory_music_*.json files (default: data/)")
+    p.add_argument("--year", type=int, help="only include this calendar year")
+    p.add_argument("--since", type=date.fromisoformat, help="first day to include (YYYY-MM-DD)")
+    p.add_argument("--until", type=date.fromisoformat, help="last day to include (YYYY-MM-DD)")
+    p.add_argument("--out", type=Path, help="output folder (default: output/<period>)")
+    return p.parse_args()
+
+
 def main():
-    data = Path("data")
-    if not any(data.glob("StreamingHistory_music_*.json")):
-        sys.exit(f"No StreamingHistory_music_*.json files in {data}/")
-    streams = load_streams(data)
+    args = parse_args()
+    if not any(args.data.glob("StreamingHistory_music_*.json")):
+        sys.exit(f"No StreamingHistory_music_*.json files in {args.data}")
+    history = load_streams(args.data)
+    if not history:
+        sys.exit(f"No listening in {args.data}")
+    first, last = min(s.end.date() for s in history), max(s.end.date() for s in history)
+
+    # Each option narrows the period, so they can be combined freely
+    start, end = first, last
+    if args.year:
+        start, end = max(start, date(args.year, 1, 1)), min(end, date(args.year, 12, 31))
+    if args.since:
+        start = max(start, args.since)
+    if args.until:
+        end = min(end, args.until)
+    streams = [s for s in history if start <= s.end.date() <= end]
     if not streams:
-        sys.exit(f"No listening after {SINCE} in {data}/")
-    out = Path("output")
-    out.mkdir(exist_ok=True)
+        sys.exit(f"No listening in that period. Your data covers {first} to {last}.")
+
+    if args.since or args.until:
+        label, folder = f"{start.day} {start:%b %Y} – {end.day} {end:%b %Y}", f"{start}_to_{end}"
+    elif args.year:
+        label, folder = str(args.year), str(args.year)
+    else:
+        label, folder = "All time", "all-time"
+    out = args.out or BASE / "output" / folder
+    out.mkdir(parents=True, exist_ok=True)
+
     write_text_reports(analyse(streams), out)
+    print(f"{label}: {start} to {end}, {len(streams):,} streams")
+    print(f"  Wrote {len(list(out.glob('*.txt')))} tables to {out}")
 
 
 if __name__ == "__main__":
