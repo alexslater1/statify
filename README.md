@@ -8,7 +8,15 @@ Statify reads the streaming history in your Spotify data export and writes text 
 
 1. On Spotify's [Privacy settings](https://www.spotify.com/account/privacy/) page, request your **Account data**.
 2. Spotify emails you a download link when it's ready, usually within a few days.
-3. Unzip it and copy the `StreamingHistory_music_*.json` files into a `data/` folder next to `main.py`.
+3. Unzip it into its own folder inside `data/`, next to `main.py`. Any name works, but the month you downloaded it keeps things tidy:
+
+```
+data/
+├── 2025-11/    ← an older export
+└── 2026-09/    ← the latest one
+```
+
+Each export only covers about the last year, so keep the old ones: every folder under `data/` with `StreamingHistory_music_*.json` files in it counts as one export, and they're merged into one history.
 
 ## Run it
 
@@ -17,10 +25,20 @@ python3 main.py                                        # everything
 python3 main.py --year 2025                            # one calendar year
 python3 main.py --since 2025-06-01 --until 2025-08-31  # any date range
 python3 main.py --year 2025 --since 2025-06-01         # options combine: June to December 2025
-python3 main.py --data data/2026-09                    # an export in another folder
+python3 main.py --data data/2026-09                    # just one export
 ```
 
-It needs Python 3 and nothing else. The script reads every `StreamingHistory_music_*.json` file in the data folder and skips tracks with an unknown artist.
+It needs Python 3 and nothing else. The script reads every `StreamingHistory_music_*.json` file in `data/` and its subfolders, and skips tracks with an unknown artist.
+
+### Several exports
+
+Exports usually overlap: one requested in November 2025 and one in September 2026 both cover September to November 2025. Where they overlap, the newer export is used. Dropping duplicates isn't enough, because Spotify renames some tracks between exports. The script prints each overlap with both exports' stream counts, and warns you if:
+
+- two exports disagree about the same stretch of time
+- there's a gap no export covers (it's reported as missing data, not as days you didn't listen)
+- a file is missing from the middle of an export
+
+### Times and names
 
 Spotify records times in UTC, so they're converted to your computer's timezone before anything is counted, including summer time. Use `--tz Europe/London` (or any other timezone) to pick a different one. Weeks run Monday to Sunday, using ISO week numbers.
 
@@ -32,7 +50,7 @@ Each period gets its own folder, so runs don't overwrite each other: `output/all
 
 | File | Contents |
 |---|---|
-| `summary.txt` | Hours listened, plays, how many artists and songs, and how many days you listened |
+| `summary.txt` | Which exports were merged and any gaps between them, then hours listened, plays, how many artists and songs, and how many days you listened |
 | `top_artists.txt` | Top 100 artists by minutes played, with their plays |
 | `top_songs.txt` | Top 100 songs by plays (a play is 30 seconds or more) |
 | `total_minutes_per_month.txt` | Minutes and plays each month, and that month's top artist |

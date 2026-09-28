@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Listening stats from Spotify's "Account data" export.
 
-Reads the StreamingHistory_music_*.json files in data/ and writes text tables to output/<period>/.
+Put each Spotify export in its own folder under data/, named anything (e.g. data/2026-09/). Every
+folder holding StreamingHistory_music_*.json files counts as one export, and they're all merged into
+one history, so keep old ones: each only covers about a year. Writes text tables to output/<period>/.
 
     python3 main.py                                        # everything
     python3 main.py --year 2025                            # one calendar year
     python3 main.py --since 2025-06-01 --until 2025-08-31  # any date range
     python3 main.py --year 2025 --since 2025-06-01         # options combine: June to December 2025
-    python3 main.py --data data/2026-09                    # another export folder
+    python3 main.py --data data/2026-09                    # just one export
 
 Times are converted from UTC to this computer's timezone (or --tz) before anything is counted.
 """
@@ -24,6 +26,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 BASE = Path(__file__).resolve().parent
 
+FILE_RE = re.compile(r"StreamingHistory_music_(\d+)\.json")
 PLAY_MS = 30_000  # Spotify counts a stream as a play once it passes 30 seconds
 REPORT_SIZE = 100  # rows in the top-N tables
 MAX_TITLE_LENGTH = 35
@@ -61,19 +64,97 @@ class Stream:
 
 # --- Loading ---------------------------------------------------------------------------------
 
+@dataclass
+class Export:
+    name: str
+    records: list
+    spans: list  # (first, last) endTime ranges it covers; split wherever a file is missing
+
+    @property
+    def first(self):
+        return self.spans[0][0]
+
+    @property
+    def last(self):
+        return self.spans[-1][1]
+
+
+def load_exports(roots, warn):
+    """One Export per folder of StreamingHistory_music_N.json files found under `roots`."""
+    folders = sorted({p.parent for root in roots for p in Path(root).rglob("StreamingHistory_music_*.json")})
+    exports = []
+    for folder in folders:
+        name = str(folder.relative_to(BASE) if folder.is_relative_to(BASE) else folder)
+        files = {}
+        for path in folder.glob("StreamingHistory_music_*.json"):
+            match = FILE_RE.fullmatch(path.name)
+            if not match:  # e.g. a "StreamingHistory_music_3 (1).json" left by downloading twice
+                continue
+            records = json.loads(path.read_text(encoding="utf-8"))
+            if records:
+                files[int(match[1])] = records
+        if not files:
+            continue
+
+        # Files are consecutive chunks of one timeline, so a missing number is a hole in it.
+        parts = sorted(files.items())
+        spans, span_start = [], min(r["endTime"] for r in parts[0][1])
+        for (i, before), (j, after) in zip(parts, parts[1:]):
+            if j != i + 1:
+                warn(f"{name} is missing " + ", ".join(f"StreamingHistory_music_{k}.json" for k in range(i + 1, j)))
+                spans.append((span_start, max(r["endTime"] for r in before)))
+                span_start = min(r["endTime"] for r in after)
+        spans.append((span_start, max(r["endTime"] for r in parts[-1][1])))
+
+        records = [r for _, recs in parts for r in recs]
+        exports.append(Export(name, records, spans))
+        print(f"Loaded {len(records):>6,} streams from {name}  ({spans[0][0][:10]} to {spans[-1][1][:10]})")
+    return exports
+
+
+def merge_exports(exports, warn):
+    """Combine exports, resolving the stretches where they overlap.
+
+    Each export covers roughly the year before it was requested, so consecutive ones overlap, and
+    Spotify renames tracks between exports, so dropping exact duplicates would still double-count.
+    Instead, wherever exports overlap the one that runs latest wins, and older ones only fill in
+    what it doesn't cover. Returns the merged records and one (older, newer, from, to, older
+    count, newer count) row per overlap.
+    """
+    merged, used, overlaps = [], [], []
+    for ex in sorted(exports, key=lambda e: e.last, reverse=True):
+        for newer in used:
+            lo, hi = max(ex.first, newer.first), min(ex.last, newer.last)
+            if lo > hi:
+                continue
+            n_old = sum(lo <= r["endTime"] <= hi for r in ex.records)
+            n_new = sum(lo <= r["endTime"] <= hi for r in newer.records)
+            overlaps.append((ex.name, newer.name, lo, hi, n_old, n_new))
+            print(f"  Overlap {lo[:10]} to {hi[:10]}: {ex.name} has {n_old:,} streams, "
+                  f"{newer.name} has {n_new:,}. Using {newer.name}")
+            if abs(n_old - n_new) > max(10, 0.02 * max(n_old, n_new)):
+                warn(f"{ex.name} and {newer.name} disagree about {lo[:10]} to {hi[:10]} "
+                     f"({n_old:,} vs {n_new:,} streams); {newer.name} was used")
+        merged.extend(r for r in ex.records if not any(a <= r["endTime"] <= b for u in used for a, b in u.spans))
+        used.append(ex)
+    return merged, overlaps
+
+
+def find_gaps(exports):
+    """Stretches between the first and last stream that no export covers, as UTC endTime pairs."""
+    spans = sorted(span for ex in exports for span in ex.spans)
+    gaps, reach = [], spans[0][1]
+    for first, last in spans[1:]:
+        if first > reach:
+            gaps.append((reach, first))
+        reach = max(reach, last)
+    return gaps
+
+
 def to_local(end_time, tz):
     """Spotify's endTime is UTC to the minute; convert it to local wall-clock time."""
     utc = datetime.strptime(end_time, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
     return utc.astimezone(tz).replace(tzinfo=None)
-
-
-def load_records(folder):
-    """Raw stream records from every history file in the export."""
-    records = []
-    # An export has as many files as it needs (10,000 streams each), so read them all
-    for path in sorted(folder.glob("StreamingHistory_music_*.json")):
-        records.extend(json.loads(path.read_text(encoding="utf-8")))
-    return records
 
 
 def song_title(track):
@@ -154,11 +235,13 @@ def top_key(counter):
     return counter.most_common(1)[0][0] if counter else None
 
 
-def analyse(streams, history, start, end):
+def analyse(streams, history, start, end, missing_days):
     """Aggregate one period's streams into the numbers behind every table.
 
     `history` is every stream regardless of period; it decides whether an artist was new.
+    `missing_days` are dates no export covers, which count as "no data" rather than "no listening".
     """
+    missing_days = sorted(d for d in missing_days if start <= d <= end)
     artist_ms, artist_plays = collections.Counter(), collections.Counter()
     song_plays = collections.Counter()
     month_ms, month_plays, day_ms = collections.Counter(), collections.Counter(), collections.Counter()
@@ -219,7 +302,8 @@ def analyse(streams, history, start, end):
             "artists": len(artist_plays),
             "songs": len(song_plays),
             "active_days": len(day_ms),
-            "days": (end - start).days + 1,
+            "days": (end - start).days + 1 - len(missing_days),
+            "missing_days": len(missing_days),
         },
         "top_artists": [[a, minutes(ms), artist_plays[a]] for a, ms in artist_ms.most_common(REPORT_SIZE)],
         "top_songs": songs(song_plays, REPORT_SIZE),
@@ -271,16 +355,19 @@ def write_table(path, headers, rows, group_col=None):
 
 
 def write_text_reports(stats, out):
-    t = stats["totals"]
+    t, cov = stats["totals"], stats["coverage"]
     song = lambda track, artist: [short(track, MAX_TITLE_LENGTH), short(artist, MAX_ARTIST_LENGTH)]
 
     summary = [
+        ("Exports merged", "; ".join(f"{name} ({first} to {last})" for name, first, last, _ in cov["exports"])),
+        ("Gaps in data", "; ".join(f"{a} to {b}" for a, b in cov["gaps"]) or "none"),
         ("Period", f"{stats['period']['start']} to {stats['period']['end']}"),
         ("Minutes played", f"{t['minutes']:,.0f}  ({t['minutes'] / 60:,.0f} hours)"),
         ("Plays (30s+)", f"{t['plays']:,}"),
         ("Artists", f"{t['artists']:,}"),
         ("Songs", f"{t['songs']:,}"),
-        ("Days listened", f"{t['active_days']:,} of {t['days']:,}"),
+        ("Days listened", f"{t['active_days']:,} of {t['days']:,}"
+                          + (f" ({t['missing_days']:,} more days have no data)" if t["missing_days"] else "")),
         ("Average per listening day", f"{t['minutes'] / t['active_days']:,.0f} minutes"),
     ]
     width = max(len(k) for k, _ in summary)
@@ -334,8 +421,8 @@ def timezone_arg(name):
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--data", type=Path, default=BASE / "data",
-                   help="folder holding the StreamingHistory_music_*.json files (default: data/)")
+    p.add_argument("--data", nargs="+", type=Path, default=[BASE / "data"],
+                   help="folders to search (recursively) for StreamingHistory_music_*.json (default: data/)")
     p.add_argument("--year", type=int, help="only include this calendar year")
     p.add_argument("--since", type=date.fromisoformat, help="first day to include (YYYY-MM-DD)")
     p.add_argument("--until", type=date.fromisoformat, help="last day to include (YYYY-MM-DD)")
@@ -346,12 +433,30 @@ def parse_args():
 
 def main():
     args = parse_args()
-    if not any(args.data.glob("StreamingHistory_music_*.json")):
-        sys.exit(f"No StreamingHistory_music_*.json files in {args.data}")
-    history = build_streams(load_records(args.data), args.tz)
+    warnings = []
+
+    def warn(message):
+        warnings.append(message)
+        print(f"  ⚠ {message}")
+
+    exports = load_exports(args.data, warn)
+    if not exports:
+        sys.exit(f"No StreamingHistory_music_*.json files found under {', '.join(map(str, args.data))}")
+    records, _ = merge_exports(exports, warn)
+    history = build_streams(records, args.tz)
     if not history:
-        sys.exit(f"No listening in {args.data}")
-    first, last = min(s.end.date() for s in history), max(s.end.date() for s in history)
+        sys.exit("No listening found in those files")
+    first, last = history[0].end.date(), history[-1].end.date()
+
+    # Whole days inside a stretch no export covers are "no data", not "no listening".
+    gaps, missing_days = [], set()
+    for a, b in find_gaps(exports):
+        a, b = to_local(a, args.tz), to_local(b, args.tz)
+        gaps.append((a, b))
+        missing_days.update(a.date() + timedelta(days=n) for n in range(1, (b.date() - a.date()).days))
+        length = f"{(b - a).days} days" if (b - a).days >= 2 else f"{(b - a).total_seconds() / 3600:.0f} hours"
+        warn(f"No export covers {a:%Y-%m-%d %H:%M} to {b:%Y-%m-%d %H:%M} ({length}), "
+             "so anything played then is missing from every stat")
 
     # Each option narrows the period, so they can be combined freely
     start, end = first, last
@@ -374,13 +479,20 @@ def main():
     out = args.out or BASE / "output" / folder
     out.mkdir(parents=True, exist_ok=True)
 
-    stats = analyse(streams, history, start, end)
+    stats = analyse(streams, history, start, end, missing_days)
+    stats["coverage"] = {
+        "exports": [[ex.name, f"{to_local(ex.first, args.tz):%Y-%m-%d}", f"{to_local(ex.last, args.tz):%Y-%m-%d}",
+                     len(ex.records)] for ex in exports],
+        "gaps": [[f"{a:%Y-%m-%d %H:%M}", f"{b:%Y-%m-%d %H:%M}"] for a, b in gaps if a.date() <= end and b.date() >= start],
+    }
     write_text_reports(stats, out)
 
     t = stats["totals"]
     print(f"{label}: {start} to {end}")
     print(f"  {t['minutes'] / 60:,.0f} hours, {t['plays']:,} plays, {t['artists']:,} artists, {t['songs']:,} songs")
     print(f"  Wrote {len(list(out.glob('*.txt')))} text tables to {out}")
+    if warnings:
+        print(f"  {len(warnings)} data warning(s) above")
 
 
 if __name__ == "__main__":
