@@ -22,6 +22,8 @@ python3 main.py --data data/2026-09                    # an export in another fo
 
 It needs Python 3 and nothing else. The script reads every `StreamingHistory_music_*.json` file in the data folder and skips tracks with an unknown artist.
 
+Spotify records times in UTC, so they're converted to your computer's timezone before anything is counted, including summer time. Use `--tz Europe/London` (or any other timezone) to pick a different one. Weeks run Monday to Sunday, using ISO week numbers.
+
 ## What you get
 
 Each period gets its own folder, so runs don't overwrite each other: `output/all-time/` with no options, `output/2025/` for `--year 2025`, and the actual dates, like `output/2025-06-01_to_2025-12-31/`, once `--since` or `--until` is involved. Use `--out` to pick a different folder.

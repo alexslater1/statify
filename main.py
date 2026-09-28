@@ -8,14 +8,17 @@ Reads the StreamingHistory_music_*.json files in data/ and writes text tables to
     python3 main.py --since 2025-06-01 --until 2025-08-31  # any date range
     python3 main.py --year 2025 --since 2025-06-01         # options combine: June to December 2025
     python3 main.py --data data/2026-09                    # another export folder
+
+Times are converted from UTC to this computer's timezone (or --tz) before anything is counted.
 """
 import argparse
 import collections
 import json
 import sys
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 BASE = Path(__file__).resolve().parent
 
@@ -28,7 +31,7 @@ WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", 
 
 @dataclass(frozen=True)
 class Stream:
-    end: datetime  # when the stream ended, as Spotify records it
+    end: datetime  # local time the stream ended
     artist: str
     track: str
     ms: int
@@ -44,16 +47,21 @@ class Stream:
 
 # --- Loading ---------------------------------------------------------------------------------
 
-def load_streams(folder):
-    """Every stream in the export's files, minus unknown artists."""
+def to_local(end_time, tz):
+    """Spotify's endTime is UTC to the minute; convert it to local wall-clock time."""
+    utc = datetime.strptime(end_time, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+    return utc.astimezone(tz).replace(tzinfo=None)
+
+
+def load_streams(folder, tz):
+    """Every stream in the export's files, minus unknown artists, in local time."""
     streams = []
     # An export has as many files as it needs (10,000 streams each), so read them all
     for path in sorted(folder.glob("StreamingHistory_music_*.json")):
         for r in json.loads(path.read_text(encoding="utf-8")):
             if r["artistName"] == "Unknown Artist":
                 continue
-            end = datetime.strptime(r["endTime"], "%Y-%m-%d %H:%M")
-            streams.append(Stream(end, r["artistName"], r["trackName"], r["msPlayed"]))
+            streams.append(Stream(to_local(r["endTime"], tz), r["artistName"], r["trackName"], r["msPlayed"]))
     return streams
 
 
@@ -61,6 +69,12 @@ def load_streams(folder):
 
 def minutes(ms):
     return round(ms / 60_000, 1)
+
+
+def iso_week(day):
+    """Monday-to-Sunday weeks, numbered so a week never splits at New Year."""
+    year, week, _ = day.isocalendar()
+    return f"{year}-W{week:02d}"
 
 
 def longest_streak(days):
@@ -86,7 +100,7 @@ def analyse(streams):
 
     for s in streams:
         day = s.end.date()
-        week, month = f"{day:%Y-W%U}", f"{day:%Y-%m}"
+        week, month = iso_week(day), f"{day:%Y-%m}"
         artist_ms[s.artist] += s.ms
         month_ms[month] += s.ms
         weekday_hour_ms[day.weekday()][s.end.hour] += s.ms
@@ -188,6 +202,13 @@ def write_text_reports(stats, out):
 
 # --- CLI -------------------------------------------------------------------------------------
 
+def timezone_arg(name):
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise argparse.ArgumentTypeError(f"unknown timezone {name!r} (try something like Europe/London)")
+
+
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data", type=Path, default=BASE / "data",
@@ -195,6 +216,7 @@ def parse_args():
     p.add_argument("--year", type=int, help="only include this calendar year")
     p.add_argument("--since", type=date.fromisoformat, help="first day to include (YYYY-MM-DD)")
     p.add_argument("--until", type=date.fromisoformat, help="last day to include (YYYY-MM-DD)")
+    p.add_argument("--tz", type=timezone_arg, help="timezone for dates and hours, e.g. Europe/London (default: this computer's)")
     p.add_argument("--out", type=Path, help="output folder (default: output/<period>)")
     return p.parse_args()
 
@@ -203,7 +225,7 @@ def main():
     args = parse_args()
     if not any(args.data.glob("StreamingHistory_music_*.json")):
         sys.exit(f"No StreamingHistory_music_*.json files in {args.data}")
-    history = load_streams(args.data)
+    history = load_streams(args.data, args.tz)
     if not history:
         sys.exit(f"No listening in {args.data}")
     first, last = min(s.end.date() for s in history), max(s.end.date() for s in history)
