@@ -1,3 +1,4 @@
+import glob
 import json
 import os
 import collections
@@ -12,8 +13,8 @@ os.makedirs('output', exist_ok=True)
 
 # Read and filter all data once
 filtered_songs = []
-for i in range(5):
-    filename = f'data/StreamingHistory_music_{i}.json'
+# An export has as many files as it needs (10,000 streams each), so read them all
+for filename in sorted(glob.glob('data/StreamingHistory_music_*.json')):
     with open(filename) as f:
         data = json.load(f)
         for song in data:

@@ -16,7 +16,7 @@ Statify reads the streaming history in your Spotify data export and writes text 
 python3 main.py
 ```
 
-It needs Python 3 and nothing else. The script reads `StreamingHistory_music_0.json` to `StreamingHistory_music_4.json`, counts listening from 1 January 2025 onwards, and skips tracks with an unknown artist.
+It needs Python 3 and nothing else. The script reads every `StreamingHistory_music_*.json` file in `data/`, counts listening from 1 January 2025 onwards, and skips tracks with an unknown artist.
 
 ## What you get
 
