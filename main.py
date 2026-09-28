@@ -1,259 +1,194 @@
-import glob
-import json
-import os
-import collections
-from datetime import datetime, timedelta
+#!/usr/bin/env python3
+"""Listening stats from Spotify's "Account data" export.
 
-REPORT_SIZE = 100
+Reads data/StreamingHistory_music_*.json and writes text tables to output/.
+"""
+import collections
+import json
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+
+PLAY_MS = 30_000  # Spotify counts a stream as a play once it passes 30 seconds
+REPORT_SIZE = 100  # rows in the top-N tables
 MAX_TITLE_LENGTH = 35
 MAX_ARTIST_LENGTH = 25
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+SINCE = "2025-01-01"  # only count listening after this date
 
-# Ensure output directory exists
-os.makedirs('output', exist_ok=True)
 
-# Read and filter all data once
-filtered_songs = []
-# An export has as many files as it needs (10,000 streams each), so read them all
-for filename in sorted(glob.glob('data/StreamingHistory_music_*.json')):
-    with open(filename) as f:
-        data = json.load(f)
-        for song in data:
-            artist = song['artistName']
-            track = song['trackName']
-            timePlayed = song['msPlayed']
-            datePlayed = song['endTime']
-            # Filter out "Unknown Artist"
-            if artist == "Unknown Artist":
+@dataclass(frozen=True)
+class Stream:
+    end: datetime  # when the stream ended, as Spotify records it
+    artist: str
+    track: str
+    ms: int
+
+    @property
+    def song(self):
+        return (self.track, self.artist)
+
+    @property
+    def is_play(self):
+        return self.ms >= PLAY_MS
+
+
+# --- Loading ---------------------------------------------------------------------------------
+
+def load_streams(folder):
+    """Every stream in the export's files, minus unknown artists and anything before SINCE."""
+    streams = []
+    # An export has as many files as it needs (10,000 streams each), so read them all
+    for path in sorted(folder.glob("StreamingHistory_music_*.json")):
+        for r in json.loads(path.read_text(encoding="utf-8")):
+            if r["artistName"] == "Unknown Artist" or r["endTime"] <= SINCE:
                 continue
-            # Only consider songs played after Jan 1 2025
-            if datePlayed <= "2025-01-01":
-                continue
-            filtered_songs.append({
-                "artist": artist,
-                "track": track,
-                "timePlayed": timePlayed,
-                "datePlayed": datePlayed
-            })
+            end = datetime.strptime(r["endTime"], "%Y-%m-%d %H:%M")
+            streams.append(Stream(end, r["artistName"], r["trackName"], r["msPlayed"]))
+    return streams
 
-# Aggregations
-artistCumulativeTimePlayed = collections.defaultdict(float)
-songPlayCounter = collections.defaultdict(int)
-minutes_per_month = collections.defaultdict(float)
-artist_minutes_week = collections.defaultdict(lambda: collections.defaultdict(float))
-artist_minutes_month = collections.defaultdict(lambda: collections.defaultdict(float))
-song_plays_week = collections.defaultdict(lambda: collections.defaultdict(int))
-song_plays_month = collections.defaultdict(lambda: collections.defaultdict(int))
 
-for song in filtered_songs:
-    artist = song["artist"]
-    track = song["track"]
-    timePlayed = song["timePlayed"]
-    datePlayed = song["datePlayed"]
+# --- Analysis --------------------------------------------------------------------------------
 
-    # Artist cumulative time played
-    artistCumulativeTimePlayed[artist] += timePlayed
+def minutes(ms):
+    return round(ms / 60_000, 1)
 
-    # Song play count (>30s)
-    if timePlayed >= 30000:
-        key = (track, artist)
-        songPlayCounter[key] += 1
 
-    # Minutes per month
-    dt = datetime.strptime(datePlayed, "%Y-%m-%d %H:%M")
-    month_key = dt.strftime("%Y-%m")
-    minutes_per_month[month_key] += timePlayed / 60000
+def longest_streak(days):
+    """Longest run of consecutive days, as (length, first_day, last_day)."""
+    best, run_start, prev = (0, None, None), None, None
+    for day in sorted(days):
+        if prev is None or day != prev + timedelta(days=1):
+            run_start = day
+        prev = day
+        length = (day - run_start).days + 1
+        if length > best[0]:
+            best = (length, run_start, day)
+    return best
 
-    # Artist minutes per week/month
-    week_key = dt.strftime("%Y-W%U")
-    artist_minutes_week[week_key][artist] += timePlayed / 60000
-    artist_minutes_month[month_key][artist] += timePlayed / 60000
 
-    # Song plays per week/month (>30s)
-    if timePlayed >= 30000:
-        song_plays_week[week_key][key] += 1
-        song_plays_month[month_key][key] += 1
+def analyse(streams):
+    """Aggregate the streams into the numbers behind every table."""
+    artist_ms, song_plays, month_ms = collections.Counter(), collections.Counter(), collections.Counter()
+    weekday_hour_ms = [[0] * 24 for _ in WEEKDAYS]
+    week_artist, month_artist = (collections.defaultdict(collections.Counter) for _ in range(2))
+    week_song, month_song = (collections.defaultdict(collections.Counter) for _ in range(2))
+    song_days, artist_days = collections.defaultdict(set), collections.defaultdict(set)
 
-# Write top 100 artists
-sortedArtists = sorted(artistCumulativeTimePlayed.items(), key=lambda x: x[1], reverse=True)
-with open('output/top_artists.txt', 'w') as f:
-    f.write(f"| {'Rank':<4} | {'Artist':<35} | {'Minutes Played':>14} |\n")
-    f.write("|" + "-"*6 + "|" + "-"*37 + "|" + "-"*16 + "|\n")
-    for i in range(min(REPORT_SIZE, len(sortedArtists))):
-        artist = sortedArtists[i][0]
-        time = round(sortedArtists[i][1] / 60000, 2)
-        f.write(f"| {i+1:<4} | {artist:<35} | {time:>14.2f} |\n")
+    for s in streams:
+        day = s.end.date()
+        week, month = f"{day:%Y-W%U}", f"{day:%Y-%m}"
+        artist_ms[s.artist] += s.ms
+        month_ms[month] += s.ms
+        weekday_hour_ms[day.weekday()][s.end.hour] += s.ms
+        week_artist[week][s.artist] += s.ms
+        month_artist[month][s.artist] += s.ms
+        if not s.is_play:
+            continue
+        song_plays[s.song] += 1
+        week_song[week][s.song] += 1
+        month_song[month][s.song] += 1
+        song_days[s.song].add(day)
+        artist_days[s.artist].add(day)
 
-# Write top 100 songs
-sortedSongs = sorted(songPlayCounter.items(), key=lambda x: x[1], reverse=True)
-with open('output/top_songs.txt', 'w') as f:
-    f.write(f"| {'Rank':<4} | {'Song':<35} | {'Artist':<25} | {'Play Count':>10} |\n")
-    f.write("|" + "-"*6 + "|" + "-"*37 + "|" + "-"*27 + "|" + "-"*12 + "|\n")
-    for i in range(min(REPORT_SIZE, len(sortedSongs))):
-        (song, artist) = sortedSongs[i][0]
-        count = sortedSongs[i][1]
-        display_song = (song[:MAX_TITLE_LENGTH-3] + '...') if len(song) > MAX_TITLE_LENGTH else song
-        display_artist = (artist[:MAX_ARTIST_LENGTH-3] + '...') if len(artist) > MAX_ARTIST_LENGTH else artist
-        f.write(f"| {i+1:<4} | {display_song:<35} | {display_artist:<25} | {count:>10} |\n")
+    song_streaks = sorted(((song, longest_streak(days)) for song, days in song_days.items()),
+                          key=lambda x: -x[1][0])
+    artist_streaks = sorted(((artist, longest_streak(days)) for artist, days in artist_days.items()),
+                            key=lambda x: -x[1][0])
 
-# Write total minutes played
-total_minutes = round(sum(artistCumulativeTimePlayed.values()) / 60000, 2)
-with open('output/total_minutes.txt', 'w') as f:
-    f.write(f"Total minutes played: {total_minutes}\n")
+    def songs(counter, n):
+        return [[t, a, plays] for (t, a), plays in counter.most_common(n)]
 
-# Write total minutes per month
-with open('output/total_minutes_per_month.txt', 'w') as f:
-    f.write(f"| {'Month':<7} | {'Minutes Played':>13} |\n")
-    f.write("|" + "-"*9 + "|" + "-"*15 + "|\n")
-    for month in sorted(minutes_per_month.keys()):
-        f.write(f"| {month:<7} | {minutes_per_month[month]:>13.2f} |\n")
+    return {
+        "minutes": minutes(sum(artist_ms.values())),
+        "top_artists": [[a, minutes(ms)] for a, ms in artist_ms.most_common(REPORT_SIZE)],
+        "top_songs": songs(song_plays, REPORT_SIZE),
+        "months": [[m, minutes(ms)] for m, ms in sorted(month_ms.items())],
+        "weekday_hour": [[ms / 60_000 for ms in row] for row in weekday_hour_ms],  # unrounded, as it gets summed
+        "weekly_top_artists": {w: [[a, minutes(ms)] for a, ms in c.most_common(5)] for w, c in sorted(week_artist.items())},
+        "monthly_top_artists": {m: [[a, minutes(ms)] for a, ms in c.most_common(5)] for m, c in sorted(month_artist.items())},
+        "weekly_top_songs": {w: songs(c, 5) for w, c in sorted(week_song.items())},
+        "monthly_top_songs": {m: songs(c, 5) for m, c in sorted(month_song.items())},
+        "song_streaks": [[t, a, n, first.isoformat(), last.isoformat()]
+                         for (t, a), (n, first, last) in song_streaks[:20]],
+        "artist_streaks": [[a, n, first.isoformat(), last.isoformat()]
+                           for a, (n, first, last) in artist_streaks[:20]],
+    }
 
-# Write top 5 artists per week
-with open('output/top5_artists_per_week.txt', 'w') as f:
-    f.write(f"| {'Week':<8} | {'Rank':<4} | {'Artist':<35} | {'Minutes Played':>14} |\n")
-    f.write("|" + "-"*10 + "|" + "-"*6 + "|" + "-"*37 + "|" + "-"*16 + "|\n")
-    for week in sorted(artist_minutes_week.keys()):
-        top5 = sorted(artist_minutes_week[week].items(), key=lambda x: x[1], reverse=True)[:5]
-        for rank, (artist, minutes) in enumerate(top5, 1):
-            f.write(f"| {week:<8} | {rank:<4} | {artist:<35} | {minutes:>14.2f} |\n")
-        f.write("|" + "-"*10 + "|" + "-"*6 + "|" + "-"*37 + "|" + "-"*16 + "|\n")
 
-# Write top 5 artists per month
-with open('output/top5_artists_per_month.txt', 'w') as f:
-    f.write(f"| {'Month':<7} | {'Rank':<4} | {'Artist':<35} | {'Minutes Played':>14} |\n")
-    f.write("|" + "-"*9 + "|" + "-"*6 + "|" + "-"*37 + "|" + "-"*16 + "|\n")
-    for month in sorted(artist_minutes_month.keys()):
-        top5 = sorted(artist_minutes_month[month].items(), key=lambda x: x[1], reverse=True)[:5]
-        for rank, (artist, minutes) in enumerate(top5, 1):
-            f.write(f"| {month:<7} | {rank:<4} | {artist:<35} | {minutes:>14.2f} |\n")
-        f.write("|" + "-"*9 + "|" + "-"*6 + "|" + "-"*37 + "|" + "-"*16 + "|\n")
+# --- Output ----------------------------------------------------------------------------------
 
-# Write top 5 songs per week
-with open('output/top5_songs_per_week.txt', 'w') as f:
-    f.write(f"| {'Week':<8} | {'Rank':<4} | {'Song':<35} | {'Artist':<25} | {'Play Count':>10} |\n")
-    f.write("|" + "-"*10 + "|" + "-"*6 + "|" + "-"*37 + "|" + "-"*27 + "|" + "-"*12 + "|\n")
-    for week in sorted(song_plays_week.keys()):
-        top5 = sorted(song_plays_week[week].items(), key=lambda x: x[1], reverse=True)[:5]
-        for rank, ((track, artist), count) in enumerate(top5, 1):
-            display_song = (track[:MAX_TITLE_LENGTH-3] + '...') if len(track) > MAX_TITLE_LENGTH else track
-            display_artist = (artist[:MAX_ARTIST_LENGTH-3] + '...') if len(artist) > MAX_ARTIST_LENGTH else artist
-            f.write(f"| {week:<8} | {rank:<4} | {display_song:<35} | {display_artist:<25} | {count:>10} |\n")
-        f.write("|" + "-"*10 + "|" + "-"*6 + "|" + "-"*37 + "|" + "-"*27 + "|" + "-"*12 + "|\n")
+def short(text, limit):
+    return text if len(text) <= limit else text[:limit - 1] + "…"
 
-# Write top 5 songs per month
-with open('output/top5_songs_per_month.txt', 'w') as f:
-    f.write(f"| {'Month':<7} | {'Rank':<4} | {'Song':<35} | {'Artist':<25} | {'Play Count':>10} |\n")
-    f.write("|" + "-"*9 + "|" + "-"*6 + "|" + "-"*37 + "|" + "-"*27 + "|" + "-"*12 + "|\n")
-    for month in sorted(song_plays_month.keys()):
-        top5 = sorted(song_plays_month[month].items(), key=lambda x: x[1], reverse=True)[:5]
-        for rank, ((track, artist), count) in enumerate(top5, 1):
-            display_song = (track[:MAX_TITLE_LENGTH-3] + '...') if len(track) > MAX_TITLE_LENGTH else track
-            display_artist = (artist[:MAX_ARTIST_LENGTH-3] + '...') if len(artist) > MAX_ARTIST_LENGTH else artist
-            f.write(f"| {month:<7} | {rank:<4} | {display_song:<35} | {display_artist:<25} | {count:>10} |\n")
-        f.write("|" + "-"*9 + "|" + "-"*6 + "|" + "-"*37 + "|" + "-"*27 + "|" + "-"*12 + "|\n")
 
-# --- Top 20 listening streaks for songs and artists (by days) ---
+def write_table(path, headers, rows, group_col=None):
+    """Write a Markdown-style table. Numeric columns are right-aligned; a rule is drawn between
+    groups whenever the value in `group_col` changes."""
+    def cell(v):
+        return f"{v:,.1f}" if isinstance(v, float) else f"{v:,}" if isinstance(v, int) else str(v)
 
-def get_longest_day_streak(dates):
-    if not dates:
-        return 0
-    dates_sorted = sorted(set(dates))
-    max_streak = 1
-    current_streak = 1
-    for i in range(1, len(dates_sorted)):
-        if dates_sorted[i] == dates_sorted[i-1] + timedelta(days=1):
-            current_streak += 1
-            max_streak = max(max_streak, current_streak)
-        else:
-            current_streak = 1
-    return max_streak
+    cells = [[cell(v) for v in row] for row in rows]
+    numeric = [bool(rows) and all(isinstance(row[i], (int, float)) for row in rows) for i in range(len(headers))]
+    widths = [max([len(h)] + [len(r[i]) for r in cells]) for i, h in enumerate(headers)]
 
-def get_longest_day_streak_with_dates(dates):
-    if not dates:
-        return 0, None, None
-    dates_sorted = sorted(set(dates))
-    max_streak = 1
-    current_streak = 1
-    streak_start = dates_sorted[0]
-    streak_end = dates_sorted[0]
-    max_start = dates_sorted[0]
-    max_end = dates_sorted[0]
-    for i in range(1, len(dates_sorted)):
-        if dates_sorted[i] == dates_sorted[i-1] + timedelta(days=1):
-            current_streak += 1
-            streak_end = dates_sorted[i]
-            if current_streak > max_streak:
-                max_streak = current_streak
-                max_start = streak_start
-                max_end = streak_end
-        else:
-            current_streak = 1
-            streak_start = dates_sorted[i]
-            streak_end = dates_sorted[i]
-    return max_streak, max_start, max_end
+    def line(values):
+        return "| " + " | ".join(v.rjust(w) if num else v.ljust(w)
+                                 for v, w, num in zip(values, widths, numeric)) + " |\n"
 
-# Build date sets for songs and artists
-song_days = collections.defaultdict(set)
-artist_days = collections.defaultdict(set)
+    rule = "|" + "|".join("-" * (w + 2) for w in widths) + "|\n"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(line(headers) + rule)
+        for i, (row, values) in enumerate(zip(rows, cells)):
+            if group_col is not None and i and row[group_col] != rows[i - 1][group_col]:
+                f.write(rule)
+            f.write(line(values))
 
-for song in filtered_songs:
-    if song["timePlayed"] >= 30000:
-        date_obj = datetime.strptime(song["datePlayed"], "%Y-%m-%d %H:%M").date()
-        song_key = (song["track"], song["artist"])
-        song_days[song_key].add(date_obj)
-        artist_days[song["artist"]].add(date_obj)
 
-# Find longest streaks for songs
-song_streaks = []
-for key, days in song_days.items():
-    streak, start, end = get_longest_day_streak_with_dates(days)
-    song_streaks.append((key, streak, start, end))
-top_song_day_streaks = sorted(song_streaks, key=lambda x: x[1], reverse=True)[:20]
+def write_text_reports(stats, out):
+    song = lambda track, artist: [short(track, MAX_TITLE_LENGTH), short(artist, MAX_ARTIST_LENGTH)]
 
-with open('output/top20_song_day_streaks.txt', 'w') as f:
-    f.write(f"| {'Rank':<4} | {'Song':<35} | {'Artist':<25} | {'Day Streak':>10} | {'Start':<10} | {'End':<10} |\n")
-    f.write("|" + "-"*6 + "|" + "-"*37 + "|" + "-"*27 + "|" + "-"*12 + "|" + "-"*12 + "|" + "-"*12 + "|\n")
-    for i, ((track, artist), streak, start, end) in enumerate(top_song_day_streaks, 1):
-        display_song = (track[:MAX_TITLE_LENGTH-3] + '...') if len(track) > MAX_TITLE_LENGTH else track
-        display_artist = (artist[:MAX_ARTIST_LENGTH-3] + '...') if len(artist) > MAX_ARTIST_LENGTH else artist
-        start_str = start.strftime("%Y-%m-%d") if start else ""
-        end_str = end.strftime("%Y-%m-%d") if end else ""
-        f.write(f"| {i:<4} | {display_song:<35} | {display_artist:<25} | {streak:>10} | {start_str:<10} | {end_str:<10} |\n")
+    (out / "total_minutes.txt").write_text(f"Total minutes played: {stats['minutes']:,.1f}\n", encoding="utf-8")
+    write_table(out / "top_artists.txt", ["Rank", "Artist", "Minutes"],
+                [[i, short(a, MAX_TITLE_LENGTH), m] for i, (a, m) in enumerate(stats["top_artists"], 1)])
+    write_table(out / "top_songs.txt", ["Rank", "Song", "Artist", "Plays"],
+                [[i, *song(tr, a), n] for i, (tr, a, n) in enumerate(stats["top_songs"], 1)])
+    write_table(out / "total_minutes_per_month.txt", ["Month", "Minutes"], stats["months"])
 
-# Find longest streaks for artists
-artist_streaks = []
-for artist, days in artist_days.items():
-    streak, start, end = get_longest_day_streak_with_dates(days)
-    artist_streaks.append((artist, streak, start, end))
-top_artist_day_streaks = sorted(artist_streaks, key=lambda x: x[1], reverse=True)[:20]
+    for period in ("week", "month"):
+        write_table(out / f"top5_artists_per_{period}.txt", [period.title(), "Rank", "Artist", "Minutes"],
+                    [[p, i, short(a, MAX_TITLE_LENGTH), m]
+                     for p, top in stats[f"{period}ly_top_artists"].items() for i, (a, m) in enumerate(top, 1)],
+                    group_col=0)
+        write_table(out / f"top5_songs_per_{period}.txt", [period.title(), "Rank", "Song", "Artist", "Plays"],
+                    [[p, i, *song(tr, a), n]
+                     for p, top in stats[f"{period}ly_top_songs"].items() for i, (tr, a, n) in enumerate(top, 1)],
+                    group_col=0)
 
-with open('output/top20_artist_day_streaks.txt', 'w') as f:
-    f.write(f"| {'Rank':<4} | {'Artist':<35} | {'Day Streak':>10} | {'Start':<10} | {'End':<10} |\n")
-    f.write("|" + "-"*6 + "|" + "-"*37 + "|" + "-"*12 + "|" + "-"*12 + "|" + "-"*12 + "|\n")
-    for i, (artist, streak, start, end) in enumerate(top_artist_day_streaks, 1):
-        display_artist = (artist[:MAX_ARTIST_LENGTH-3] + '...') if len(artist) > MAX_ARTIST_LENGTH else artist
-        start_str = start.strftime("%Y-%m-%d") if start else ""
-        end_str = end.strftime("%Y-%m-%d") if end else ""
-        f.write(f"| {i:<4} | {display_artist:<35} | {streak:>10} | {start_str:<10} | {end_str:<10} |\n")
+    write_table(out / "top20_song_day_streaks.txt", ["Rank", "Song", "Artist", "Day streak", "Start", "End"],
+                [[i, *song(tr, a), n, s, e] for i, (tr, a, n, s, e) in enumerate(stats["song_streaks"], 1)])
+    write_table(out / "top20_artist_day_streaks.txt", ["Rank", "Artist", "Day streak", "Start", "End"],
+                [[i, short(a, MAX_TITLE_LENGTH), n, s, e] for i, (a, n, s, e) in enumerate(stats["artist_streaks"], 1)])
 
-day_of_week_counter = collections.Counter()
-hour_of_day_counter = collections.Counter()
-for song in filtered_songs:
-    dt = datetime.strptime(song["datePlayed"], "%Y-%m-%d %H:%M")
-    day_of_week_counter[dt.strftime("%A")] += song["timePlayed"]
-    hour_of_day_counter[dt.hour] += song["timePlayed"]
-    
-# --- Day of week you listen most (table) ---
-with open('output/day_of_week_most.txt', 'w') as f:
-    f.write(f"| {'Day':<10} | {'Minutes Played':>14} |\n")
-    f.write("|" + "-"*12 + "|" + "-"*16 + "|\n")
-    for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
-        minutes = round(day_of_week_counter[day]/60000, 2)
-        f.write(f"| {day:<10} | {minutes:>14.2f} |\n")
+    heat = stats["weekday_hour"]
+    write_table(out / "day_of_week_most.txt", ["Day", "Minutes"],
+                [[day, round(sum(row), 1)] for day, row in zip(WEEKDAYS, heat)])
+    write_table(out / "hour_of_day_most.txt", ["Hour", "Minutes"],
+                [[f"{h:02d}:00", round(sum(row[h] for row in heat), 1)] for h in range(24)])
 
-# --- Hour of day you listen most (table) ---
-with open('output/hour_of_day_most.txt', 'w') as f:
-    f.write(f"| {'Hour':<5} | {'Minutes Played':>14} |\n")
-    f.write("|" + "-"*7 + "|" + "-"*16 + "|\n")
-    for hour in range(24):
-        minutes = round(hour_of_day_counter[hour]/60000, 2)
-        f.write(f"| {hour:02d}:00 | {minutes:>14.2f} |\n")
+
+def main():
+    data = Path("data")
+    if not any(data.glob("StreamingHistory_music_*.json")):
+        sys.exit(f"No StreamingHistory_music_*.json files in {data}/")
+    streams = load_streams(data)
+    if not streams:
+        sys.exit(f"No listening after {SINCE} in {data}/")
+    out = Path("output")
+    out.mkdir(exist_ok=True)
+    write_text_reports(analyse(streams), out)
+
+
+if __name__ == "__main__":
+    main()
