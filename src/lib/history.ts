@@ -60,9 +60,15 @@ export function buildHistory(records: StreamRecord[], gaps: Range[]): History {
     .sort((a, b) =>
       a.endTime < b.endTime ? -1 : a.endTime > b.endTime ? 1 : 0,
     );
+  // Names repeat far more than they vary, so each is matched once
+  const artistKeys = new Map<string, string>();
+  const titles = new Map<string, { title: string; songKey: string }>();
   for (const r of sorted) {
     // Oldest first, so the newest spelling of each name wins
-    const artistKey = matchKey(r.artistName);
+    let artistKey = artistKeys.get(r.artistName);
+    if (artistKey === undefined) {
+      artistKeys.set(r.artistName, (artistKey = matchKey(r.artistName)));
+    }
     let artist = artistIds.get(artistKey);
     if (artist === undefined) {
       artist = artists.length;
@@ -71,8 +77,12 @@ export function buildHistory(records: StreamRecord[], gaps: Range[]): History {
     }
     artists[artist].name = r.artistName;
 
-    const title = songTitle(r.trackName);
-    const songKey = matchKey(title);
+    let named = titles.get(r.trackName);
+    if (!named) {
+      const title = songTitle(r.trackName);
+      titles.set(r.trackName, (named = { title, songKey: matchKey(title) }));
+    }
+    const { title, songKey } = named;
     let song = songIds.get(`${artist} ${songKey}`);
     if (song === undefined) {
       song = songs.length;

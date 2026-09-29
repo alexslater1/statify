@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { stream } from "../../test/fixtures.ts";
 import { buildHistory } from "../history.ts";
-import { series, weekdayHour } from "./series.ts";
+import { artistMonths, series, weekdayHour } from "./series.ts";
 
 const { streams } = buildHistory(
   [
@@ -158,5 +158,33 @@ describe("weekdayHour", () => {
     expect(grid[0][9]).toBe(120_000);
     expect(grid[0][0]).toBe(60_000);
     expect(grid[6][23]).toBe(0);
+  });
+});
+
+describe("artistMonths", () => {
+  // Jo Example is artist 0 and The Test Pilots 1, in order of first play
+  it("gives each artist's time per month, in the order asked", () => {
+    expect(
+      artistMonths(
+        streams,
+        { first: "2025-01-01", last: "2025-02-28" },
+        [1, 0],
+      ),
+    ).toEqual([
+      [180_000 + 10_000 + 180_000, 180_000],
+      [60_000 + 200_000, 0],
+    ]);
+  });
+
+  it("leaves out streams outside the period, even in its months", () => {
+    expect(
+      artistMonths(streams, { first: "2025-01-10", last: "2025-03-31" }, [1]),
+    ).toEqual([[180_000, 180_000, 0]]);
+  });
+
+  it("gives zeros for an artist with no streams", () => {
+    expect(
+      artistMonths(streams, { first: "2025-01-01", last: "2025-01-31" }, [7]),
+    ).toEqual([[0]]);
   });
 });

@@ -1,6 +1,6 @@
 import { addDays, isoWeek, weekday } from "../dates.ts";
 import { isPlay, type Stream } from "../history.ts";
-import { inPeriod, type Period } from "./period.ts";
+import { inPeriod, months, type Period } from "./period.ts";
 import { count, topKey } from "./top.ts";
 
 export type Unit = "day" | "week" | "month";
@@ -84,6 +84,27 @@ export function weekdayHour(streams: Stream[]): number[][] {
     grid[day][s.hour] += s.ms;
   }
   return grid;
+}
+
+/**
+ * Each of `artists`' listening time in each month of `period`: a row per
+ * artist, in the order given, with a column per month.
+ */
+export function artistMonths(
+  streams: Stream[],
+  period: Period,
+  artists: number[],
+): number[][] {
+  const columns = new Map(months(period).map((month, i) => [month, i]));
+  const rows = new Map(
+    artists.map((a) => [a, new Array<number>(columns.size).fill(0)]),
+  );
+  for (const s of streams) {
+    const row = rows.get(s.artist);
+    if (row && inPeriod(s.day, period))
+      row[columns.get(s.day.slice(0, 7))!] += s.ms;
+  }
+  return artists.map((a) => rows.get(a)!);
 }
 
 function keyOf(first: string, unit: Unit): string {

@@ -29,25 +29,47 @@ interface Tooltip {
 
 export const TooltipContext = createContext<Tooltip | null>(null);
 
+function useTooltipContext(): Tooltip {
+  const tooltip = useContext(TooltipContext);
+  if (!tooltip) throw new Error("Tooltips need a TooltipProvider");
+  return tooltip;
+}
+
+/** Where a tooltip about an element points: the middle of its top edge. */
+function above(element: Element): Point {
+  const box = element.getBoundingClientRect();
+  return { x: box.left + box.width / 2, y: box.top };
+}
+
 /**
  * Gives marks the page's one tooltip: spread `tip(content)` onto a mark to
  * show `content` while it's hovered or has keyboard focus.
  */
 export function useTooltip() {
-  const tooltip = useContext(TooltipContext);
-  if (!tooltip) throw new Error("useTooltip needs a TooltipProvider");
+  const tooltip = useTooltipContext();
   return (content: TooltipContent) => ({
     onPointerEnter: (e: PointerEvent) =>
       tooltip.show(content, { x: e.clientX, y: e.clientY }),
     onPointerMove: (e: PointerEvent) =>
       tooltip.move({ x: e.clientX, y: e.clientY }),
     onPointerLeave: tooltip.hide,
-    onFocus: (e: FocusEvent) => {
-      const box = e.currentTarget.getBoundingClientRect();
-      tooltip.show(content, { x: box.left + box.width / 2, y: box.top });
-    },
+    onFocus: (e: FocusEvent) => tooltip.show(content, above(e.currentTarget)),
     onBlur: tooltip.hide,
   });
+}
+
+/**
+ * The tooltip, for charts that choose what it shows as the pointer moves, or
+ * as arrow keys move between marks.
+ */
+export function useTooltipControl() {
+  const tooltip = useTooltipContext();
+  return {
+    ...tooltip,
+    /** Shows it over an element rather than at the pointer. */
+    showOver: (content: TooltipContent, element: Element) =>
+      tooltip.show(content, above(element)),
+  };
 }
 
 const MARGIN = 8; // from the edge of the window

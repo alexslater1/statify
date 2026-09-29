@@ -66,7 +66,7 @@ Each period gets its own folder, so runs don't overwrite each other: `output/all
 
 ## The web app
 
-Statify is being rebuilt as a web app that runs entirely in your browser. So far it loads your exports and shows what they cover: each export's dates and files, where they overlap, and any gaps or missing files. There are no charts yet, so use the Python script above for your stats.
+Statify is being rebuilt as a web app that runs entirely in your browser. So far it charts your hours each month, how long you listened every day, which days and hours you listen most, your top 10 artists and songs, and your top artists month by month. Below the charts it shows what your exports cover: each export's dates and files, where they overlap, and any gaps or missing files. The Python script above still has more, like streaks, biggest days, weekly top 5s and new artists.
 
 To load your data, drop the `.zip` Spotify sends you, the folder it unzips to, or its `StreamingHistory_music_*.json` files anywhere on the page, or choose the zip or files with the button. Add as many exports as you have; they're merged as described in [Several exports](#several-exports). Nothing is uploaded. Only the streaming history files are read, not the rest of the export, and they're kept in your browser's storage (IndexedDB) so they're still there next time. Remove an export, or one of its files, from the page to delete it.
 

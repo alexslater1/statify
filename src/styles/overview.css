@@ -1,0 +1,30 @@
+.section-title {
+  margin: 40px 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Two cards side by side, one above the other on narrow screens */
+.card-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.card-pair + .card,
+.card + .card-pair {
+  margin-top: 16px;
+}
+
+.card-pair .card + .card {
+  margin-top: 0;
+}
+
+@media (max-width: 860px) {
+  .card-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

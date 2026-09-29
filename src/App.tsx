@@ -3,7 +3,7 @@ import { FileDrop } from "./components/FileDrop.tsx";
 import { TooltipProvider } from "./components/TooltipProvider.tsx";
 import { TopBar } from "./components/TopBar.tsx";
 import { Welcome } from "./pages/Welcome.tsx";
-import { YourData } from "./pages/YourData.tsx";
+import { Overview } from "./pages/Overview.tsx";
 
 export default function App() {
   const { exports, reading, notice, add, remove, removeFile } = useExports();
@@ -17,7 +17,7 @@ export default function App() {
         ) : exports.length === 0 ? (
           <Welcome onAdd={add} reading={reading} notice={notice} />
         ) : (
-          <YourData
+          <Overview
             exports={exports}
             onAdd={add}
             onRemove={remove}

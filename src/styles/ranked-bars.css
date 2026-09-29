@@ -1,0 +1,72 @@
+.ranked-bars {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ranked-bars li {
+  display: grid;
+  grid-template-columns: 2.5ch minmax(0, 1fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.ranked-bars li:hover,
+.ranked-bars li:focus-visible {
+  background: var(--wash);
+}
+
+.rank {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ranked-name {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranked-name .by {
+  color: var(--muted);
+}
+
+.track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fill {
+  flex: none;
+  min-width: 2px;
+  height: 12px;
+  border-radius: 0 4px 4px 0;
+  background: var(--accent);
+}
+
+.track .value {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* On a phone the bar goes under the name */
+@media (max-width: 520px) {
+  .ranked-bars li {
+    grid-template-columns: 2.5ch minmax(0, 1fr);
+    row-gap: 2px;
+  }
+
+  .ranked-bars .track {
+    grid-column: 2;
+  }
+}

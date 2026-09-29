@@ -1,0 +1,39 @@
+.multiples {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px 24px;
+}
+
+.multiple-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.multiple-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multiple-total {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .multiples {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .multiples {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

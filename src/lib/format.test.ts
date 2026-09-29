@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   countOf,
   formatDay,
+  formatDayLong,
+  formatDecimal,
+  formatDuration,
+  formatEndTimes,
+  formatHours,
+  formatPercent,
   formatDays,
   formatLength,
   formatList,
@@ -100,5 +106,63 @@ describe("formatList", () => {
     [["a", "b", "c"], "a, b and c"],
   ])("joins %j as %j", (items, text) => {
     expect(formatList(items)).toBe(text);
+  });
+});
+
+describe("formatDecimal", () => {
+  it("rounds to one place and groups thousands", () => {
+    expect(formatDecimal(1.25)).toBe("1.3");
+    expect(formatDecimal(2)).toBe("2");
+    expect(formatDecimal(1234.56)).toBe("1,234.6");
+  });
+});
+
+describe("formatPercent", () => {
+  it("gives one decimal place", () => {
+    expect(formatPercent(0.1234)).toBe("12.3%");
+    expect(formatPercent(1)).toBe("100%");
+    expect(formatPercent(0)).toBe("0%");
+  });
+});
+
+describe("formatHours", () => {
+  it.each([
+    [0, "0 h"],
+    [HOUR * 1.5, "1.5 h"],
+    [HOUR * 9.94, "9.9 h"],
+    [HOUR * 10, "10 h"],
+    [HOUR * 3408.4, "3,408 h"],
+  ])("writes %d ms as %s", (ms, text) => {
+    expect(formatHours(ms)).toBe(text);
+  });
+});
+
+describe("formatDuration", () => {
+  it.each([
+    [0, "0 min"],
+    [29_000, "0 min"],
+    [45 * MINUTE, "45 min"],
+    [59 * MINUTE + 31_000, "1 h"],
+    [125 * MINUTE, "2 h 5 min"],
+    [3 * HOUR, "3 h"],
+  ])("writes %d ms as %s", (ms, text) => {
+    expect(formatDuration(ms)).toBe(text);
+  });
+});
+
+describe("formatDayLong", () => {
+  it("starts with the weekday", () => {
+    expect(formatDayLong("2025-11-07")).toBe("Fri 7 Nov 2025");
+    expect(formatDayLong("2025-11-10")).toBe("Mon 10 Nov 2025");
+    expect(formatDayLong("2025-11-09")).toBe("Sun 9 Nov 2025");
+  });
+});
+
+describe("formatEndTimes", () => {
+  it("gives the local days", () => {
+    // 23:30 UTC on 30 June is 00:30 on 1 July in UK summer time
+    expect(formatEndTimes("2025-01-01 10:00", "2025-06-30 23:30")).toBe(
+      "1 Jan – 1 Jul 2025",
+    );
   });
 });
