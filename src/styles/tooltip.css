@@ -1,0 +1,27 @@
+.tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 10;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--tip-bg);
+  color: var(--tip-ink);
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+/* The value leads; the lines say what it's the value of */
+.tooltip strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tooltip span {
+  display: block;
+  color: var(--tip-ink-2);
+}

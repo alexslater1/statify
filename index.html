@@ -5,6 +5,17 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Statify</title>
+    <script>
+      // Open in the saved theme rather than flashing the other first (see src/lib/theme.ts)
+      try {
+        const theme = localStorage.getItem("statify-theme");
+        if (theme === "light" || theme === "dark") {
+          document.documentElement.dataset.theme = theme;
+        }
+      } catch {
+        // Storage is blocked, so follow the system setting
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

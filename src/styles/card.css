@@ -1,0 +1,27 @@
+.card {
+  min-width: 0;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.card + .card {
+  margin-top: 16px;
+}
+
+.card-head {
+  margin-bottom: 16px;
+}
+
+.card-head h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.card-head p {
+  color: var(--ink-2);
+  font-size: 13px;
+  margin: 2px 0 0;
+}

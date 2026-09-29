@@ -1,0 +1,48 @@
+/*
+ * Colours, as light-dark(light, dark). The theme switch sets color-scheme, so
+ * with no choice saved the page follows the system setting.
+ *
+ * The green scale and accents are checked with the dataviz skill's
+ * validate_palette.js: the scale as an ordinal ramp (--ordinal) against each
+ * mode's surface, the accent as a mark (3:1) and green text against WCAG 4.5:1.
+ * Dark mode takes its own steps from the same ramp rather than a flipped scale.
+ */
+:root {
+  color-scheme: light dark;
+
+  --page: light-dark(#f9f9f7, #0d0d0d);
+  --surface: light-dark(#fcfcfb, #1a1a19);
+  --ink: light-dark(#0b0b0b, #ffffff);
+  --ink-2: light-dark(#52514e, #c3c2b7);
+  --muted: #898781;
+  --grid: light-dark(#e1e0d9, #2c2c2a);
+  --axis: light-dark(#c3c2b7, #383835);
+  --border: light-dark(rgba(11, 11, 11, 0.1), rgba(255, 255, 255, 0.1));
+
+  --accent: light-dark(#0a8a3f, #2e9e52); /* bars, lines and fills */
+  --accent-text: light-dark(#007433, #47b366); /* green text */
+  --wash: light-dark(rgba(10, 138, 63, 0.1), rgba(46, 158, 82, 0.16));
+
+  /* How much listening, least to most: one green, lighter to darker in light
+     mode and darker to brighter in dark mode */
+  --seq-1: light-dark(#69c67f, #005f29);
+  --seq-2: light-dark(#47b366, #007433);
+  --seq-3: light-dark(#2e9e52, #0a8a3f);
+  --seq-4: light-dark(#0a8a3f, #2e9e52);
+  --seq-5: light-dark(#007433, #47b366);
+  --seq-6: light-dark(#005f29, #69c67f);
+  --seq-7: light-dark(#004b1e, #8ad89b);
+  --empty: light-dark(#efeee9, #242422); /* a day with no listening */
+
+  --tip-bg: light-dark(#0b0b0b, #fcfcfb);
+  --tip-ink: light-dark(#ffffff, #0b0b0b);
+  --tip-ink-2: light-dark(#c3c2b7, #52514e);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
