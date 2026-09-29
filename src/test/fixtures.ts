@@ -1,4 +1,5 @@
 // Made-up listening data for tests. Never put real exports here.
+import { strToU8, zipSync } from "fflate";
 import type { InputFile } from "../lib/spotify/exports.ts";
 import type { StreamRecord } from "../lib/spotify/files.ts";
 
@@ -40,4 +41,11 @@ export function historyFile(
     path: `${folder}/StreamingHistory_music_${n}.json`,
     text: JSON.stringify(records),
   };
+}
+
+/** A zip of `files`, like the one Spotify sends. */
+export function zipOf(files: InputFile[]): Uint8Array {
+  return zipSync(
+    Object.fromEntries(files.map(({ path, text }) => [path, strToU8(text)])),
+  );
 }

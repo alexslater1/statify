@@ -1,0 +1,32 @@
+/* Covers the page while files are dragged over it. Pointer events pass
+   through, so the drag keeps its place in the page underneath */
+.file-drop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--page) 85%, transparent);
+  pointer-events: none;
+}
+
+.file-drop::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+}
+
+.file-drop p {
+  margin: 0;
+  padding: 12px 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  font-size: 18px;
+  font-weight: 600;
+  text-align: center;
+}

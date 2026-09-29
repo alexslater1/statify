@@ -66,7 +66,9 @@ Each period gets its own folder, so runs don't overwrite each other: `output/all
 
 ## The web app
 
-Statify is being rebuilt as a web app that runs entirely in your browser. So far it's only a placeholder page, so use the Python script above for your stats.
+Statify is being rebuilt as a web app that runs entirely in your browser. So far it loads your exports and shows what they cover: each export's dates and files, where they overlap, and any gaps or missing files. There are no charts yet, so use the Python script above for your stats.
+
+To load your data, drop the `.zip` Spotify sends you, the folder it unzips to, or its `StreamingHistory_music_*.json` files anywhere on the page, or choose the zip or files with the button. Add as many exports as you have; they're merged as described in [Several exports](#several-exports). Nothing is uploaded. Only the streaming history files are read, not the rest of the export, and they're kept in your browser's storage (IndexedDB) so they're still there next time. Remove an export, or one of its files, from the page to delete it.
 
 It needs [Node.js](https://nodejs.org/) 24. The easiest way to get it is with [nvm](https://github.com/nvm-sh/nvm):
 

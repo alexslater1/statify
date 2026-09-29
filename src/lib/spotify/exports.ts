@@ -17,6 +17,14 @@ export interface Range {
   to: string;
 }
 
+/** One StreamingHistory_music_N.json file in an export. */
+export interface ExportFile {
+  number: number; // the N
+  from: string; // first endTime
+  to: string; // last endTime
+  streams: number;
+}
+
 /** A Spotify export: the StreamingHistory_music_N.json files in one folder. */
 export interface Export {
   name: string; // the folder
@@ -30,6 +38,7 @@ export interface Export {
   spans: Range[];
   /** Files missing from the middle, e.g. [2] for files 0, 1 and 3. */
   missingFiles: number[];
+  files: ExportFile[]; // in number order, leaving out empty ones
 }
 
 /**
@@ -52,6 +61,25 @@ export function loadExports(files: InputFile[]): Export[] {
   return [...folders.keys()]
     .sort()
     .map((folder) => buildExport(folder, folders.get(folder)!));
+}
+
+/**
+ * The export without file `number`, as loadExports would give it without that
+ * file, or null if it was the only one. A file from the middle leaves a hole,
+ * just like a missing one.
+ */
+export function withoutFile(ex: Export, number: number): Export | null {
+  // `records` holds each file's streams in turn, in file order
+  const byNumber = new Map<number, StreamRecord[]>();
+  let start = 0;
+  for (const file of ex.files) {
+    const end = start + file.streams;
+    if (file.number !== number) {
+      byNumber.set(file.number, ex.records.slice(start, end));
+    }
+    start = end;
+  }
+  return byNumber.size > 0 ? buildExport(ex.name, byNumber) : null;
 }
 
 function buildExport(
@@ -78,6 +106,12 @@ function buildExport(
     to: spans[spans.length - 1].to,
     spans,
     missingFiles,
+    files: parts.map(([number, records]) => ({
+      number,
+      from: earliest(records),
+      to: latest(records),
+      streams: records.length,
+    })),
   };
 }
 

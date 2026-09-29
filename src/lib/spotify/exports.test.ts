@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { daily, historyFile, stream } from "../../test/fixtures.ts";
-import { loadExports } from "./exports.ts";
+import { loadExports, withoutFile } from "./exports.ts";
 
 describe("loadExports", () => {
   it("makes one export per folder, in folder order", () => {
@@ -53,6 +53,31 @@ describe("loadExports", () => {
       to: "2025-04-30 12:00",
     });
     expect(ex.records).toHaveLength(31 + 28 + 30);
+  });
+
+  it("describes each file", () => {
+    const [ex] = loadExports([
+      historyFile("export", 3, daily("2025-04-01", "2025-04-30")),
+      historyFile("export", 0, [
+        stream("2025-01-05 10:00"),
+        stream("2025-01-01 08:00"),
+      ]),
+      historyFile("export", 1, []),
+    ]);
+    expect(ex.files).toEqual([
+      {
+        number: 0,
+        from: "2025-01-01 08:00",
+        to: "2025-01-05 10:00",
+        streams: 2,
+      },
+      {
+        number: 3,
+        from: "2025-04-01 12:00",
+        to: "2025-04-30 12:00",
+        streams: 30,
+      },
+    ]);
   });
 
   it("lists every missing file", () => {
@@ -110,5 +135,46 @@ describe("loadExports", () => {
     ).toThrow(
       "export/StreamingHistory_music_0.json doesn't look like Spotify streaming history",
     );
+  });
+});
+
+describe("withoutFile", () => {
+  const files = [
+    historyFile("export", 0, daily("2025-01-01", "2025-01-31")),
+    historyFile("export", 1, daily("2025-02-01", "2025-02-28")),
+    historyFile("export", 2, daily("2025-03-01", "2025-03-31")),
+  ];
+  const [ex] = loadExports(files);
+
+  it.each([0, 1, 2])(
+    "gives what loading the other files would, without file %d",
+    (n) => {
+      const [expected] = loadExports(files.filter((_, i) => i !== n));
+      expect(withoutFile(ex, n)).toEqual(expected);
+    },
+  );
+
+  it("leaves a hole where a file from the middle was", () => {
+    const rest = withoutFile(ex, 1)!;
+    expect(rest.missingFiles).toEqual([1]);
+    expect(rest.spans).toEqual([
+      { from: "2025-01-01 12:00", to: "2025-01-31 12:00" },
+      { from: "2025-03-01 12:00", to: "2025-03-31 12:00" },
+    ]);
+  });
+
+  it("keeps the rest of an export that already has a hole", () => {
+    const [holey] = loadExports([files[0], files[2]]);
+    const [expected] = loadExports([files[0]]);
+    expect(withoutFile(holey, 2)).toEqual(expected);
+  });
+
+  it("changes nothing for a file it doesn't have", () => {
+    expect(withoutFile(ex, 5)).toEqual(ex);
+  });
+
+  it("gives null for the only file", () => {
+    const [single] = loadExports([files[0]]);
+    expect(withoutFile(single, 0)).toBeNull();
   });
 });

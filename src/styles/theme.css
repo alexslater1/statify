@@ -21,7 +21,17 @@
 
   --accent: light-dark(#0a8a3f, #2e9e52); /* bars, lines and fills */
   --accent-text: light-dark(#007433, #47b366); /* green text */
+  /* Buttons filled with --accent-text: the hover and the text on it */
+  --accent-hover: light-dark(#005f29, #69c67f);
+  --on-accent: light-dark(#ffffff, #0b0b0b);
   --wash: light-dark(rgba(10, 138, 63, 0.1), rgba(46, 158, 82, 0.16));
+
+  /* The skill's status colours, the same in both modes. An icon and words
+     always go with them, so colour never carries the meaning alone */
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --flag-bg: light-dark(rgba(250, 178, 25, 0.1), rgba(250, 178, 25, 0.08));
+  --flag-border: light-dark(rgba(250, 178, 25, 0.45), rgba(250, 178, 25, 0.35));
 
   /* How much listening, least to most: one green, lighter to darker in light
      mode and darker to brighter in dark mode */

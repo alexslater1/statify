@@ -1,0 +1,129 @@
+.export-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.export-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--grid);
+}
+
+.export-list > li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.export-info strong {
+  display: block;
+  font-weight: 600;
+}
+
+.export-info span {
+  display: block;
+  color: var(--ink-2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.export-files {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.export-files summary {
+  width: max-content;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.export-files summary:hover {
+  color: var(--ink);
+}
+
+.export-files ul {
+  margin: 6px 0 0;
+  padding: 0 0 0 16px;
+  list-style: none;
+}
+
+/* The name and details share a line when there's room, and wrap when not */
+.export-files li {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  padding: 2px 0;
+  color: var(--ink-2);
+}
+
+.export-files li > span:first-child {
+  min-width: 16em;
+  color: var(--ink);
+}
+
+/* Quieter than the export's own button, since there's one on every file */
+.file-remove {
+  margin-left: auto;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.file-remove:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.export-files .missing {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.export-files .missing::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.overlap-list {
+  margin: 4px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--grid);
+  color: var(--ink-2);
+  font-size: 14px;
+  list-style: none;
+}
+
+.overlap-list li + li {
+  margin-top: 6px;
+}
+
+.add-more {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--grid);
+}
+
+.add-more h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.add-more > p {
+  margin: 2px 0 12px;
+  color: var(--ink-2);
+  font-size: 13px;
+}

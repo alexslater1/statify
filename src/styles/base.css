@@ -33,6 +33,21 @@ h1 {
   margin: 0 0 24px;
 }
 
+a {
+  color: var(--accent-text);
+}
+
+/* Only worth saying if opening the saved data takes a moment */
+.opening {
+  animation: appear 0s 0.4s both;
+}
+
+@keyframes appear {
+  from {
+    visibility: hidden;
+  }
+}
+
 :focus-visible {
   outline: 2px solid var(--accent-text);
   outline-offset: 2px;
